@@ -1,0 +1,55 @@
+name: Create my signing key (run ONCE)
+
+on:
+  workflow_dispatch:
+    inputs:
+      key_password:
+        description: 'Choose a password for your key: 8 or more letters/numbers, no spaces. WRITE IT DOWN - it cannot be recovered.'
+        required: true
+      owner_name:
+        description: 'Your name or company name (letters, numbers and spaces only)'
+        required: true
+
+jobs:
+  create-key:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Create the key
+        env:
+          KEY_PW: ${{ inputs.key_password }}
+          OWNER: ${{ inputs.owner_name }}
+        run: |
+          if ! [[ "$KEY_PW" =~ ^[A-Za-z0-9]{8,}$ ]]; then
+            echo "::error::The password must be 8 or more letters/numbers with no spaces or symbols."
+            exit 1
+          fi
+          if ! [[ "$OWNER" =~ ^[A-Za-z0-9\ ]+$ ]]; then
+            echo "::error::The name may only contain letters, numbers and spaces."
+            exit 1
+          fi
+          mkdir out
+          keytool -genkeypair -keystore out/release.keystore -storetype PKCS12 \
+            -alias upload -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass "$KEY_PW" -keypass "$KEY_PW" -dname "CN=$OWNER"
+          base64 -w 0 out/release.keystore > out/KEYSTORE_BASE64.txt
+          cat > out/READ_ME.txt <<'TXT'
+          Add these 4 GitHub Secrets (Settings > Secrets and variables > Actions):
+            KEYSTORE_BASE64   = the full text inside KEYSTORE_BASE64.txt
+            KEYSTORE_PASSWORD = the password you typed
+            KEY_ALIAS         = upload
+            KEY_PASSWORD      = the same password you typed
+          Keep release.keystore and your password forever in a safe place (not in GitHub).
+          TXT
+
+      - name: Save the key (download it, then delete it)
+        uses: actions/upload-artifact@v4
+        with:
+          name: YOUR-SIGNING-KEY-keep-private
+          path: out/
+          retention-days: 1
